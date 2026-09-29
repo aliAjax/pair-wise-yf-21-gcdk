@@ -1,126 +1,95 @@
+import { useState } from "react";
 import "./styles.css";
+import { availableQty, dispatch, reservedQty, useStoreState } from "./store";
+import ArchivePage from "./pages/ArchivePage";
+import JobsPage from "./pages/JobsPage";
+import ColorsPage from "./pages/ColorsPage";
 
-const project = {
-  "sourceNo": 2,
-  "id": "hxyfront-62009",
-  "port": 62009,
-  "title": "地毯修复纹样档案",
-  "domain": "手工地毯修复",
-  "prompt": "做一个给手工地毯修复工作室使用的纹样与修复档案前端项目，可以记录地毯产地、年代、结密度、材质、染色类型、破损区域、补线颜色和修复工序。页面需要有纹样局部标记图、修复前后记录、材料色卡、工序进度和按产地筛选的档案列表。",
-  "palette": [
-    "#7c2d12",
-    "#b45309",
-    "#0f766e"
-  ],
-  "metrics": [
-    "待修复",
-    "纹样档案",
-    "色卡数量",
-    "完工率"
-  ],
-  "filters": [
-    "波斯",
-    "安纳托利亚",
-    "高加索",
-    "藏毯"
-  ],
-  "fields": [
-    "地毯产地",
-    "年代",
-    "结密度",
-    "材质",
-    "染色类型",
-    "破损区域"
-  ],
-  "records": [
-    [
-      "CAR-092",
-      "波斯",
-      "羊毛，约1960s",
-      "边缘磨损待补线"
-    ],
-    [
-      "CAR-117",
-      "安纳托利亚",
-      "植物染，结密度42",
-      "中心纹样缺口"
-    ],
-    [
-      "CAR-138",
-      "藏毯",
-      "局部褪色",
-      "需匹配靛蓝色卡"
-    ]
-  ]
-};
+type Tab = "archive" | "jobs" | "colors";
+
+const TABS: Array<{ key: Tab; label: string }> = [
+  { key: "archive", label: "纹样档案" },
+  { key: "jobs", label: "修复工序" },
+  { key: "colors", label: "材料色卡" },
+];
 
 function App() {
+  const state = useStoreState();
+  const [tab, setTab] = useState<Tab>("archive");
+
+  const activeJobs = state.jobs.filter((j) => j.status === "active");
+  const doneJobs = state.jobs.filter((j) => j.status === "done");
+  // 按单位分别汇总，避免把“米”和“绞”混加
+  const byUnit = new Map<string, { reserved: number; available: number }>();
+  for (const c of state.colors) {
+    const row = byUnit.get(c.unit) ?? { reserved: 0, available: 0 };
+    row.reserved += reservedQty(state, c.id);
+    row.available += availableQty(state, c.id);
+    byUnit.set(c.unit, row);
+  }
+  const fmtByUnit = (key: "reserved" | "available") =>
+    Array.from(byUnit.entries())
+      .map(([unit, v]) => `${Math.round(v[key] * 100) / 100} ${unit}`)
+      .join("、") || "0";
+  const finishRate =
+    state.jobs.length === 0
+      ? 0
+      : Math.round((doneJobs.length / state.jobs.length) * 100);
+
+  const metrics = [
+    { label: "纹样档案", value: state.carpets.length, unit: "件", raw: true },
+    { label: "占线工序", value: activeJobs.length, unit: `单 · 占用 ${fmtByUnit("reserved")}`, raw: true },
+    { label: "可开单补线", value: "", unit: fmtByUnit("available"), raw: true },
+    { label: "完工率", value: finishRate, unit: `%（完工 ${doneJobs.length} 单）`, raw: true },
+  ];
+
   return (
     <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark">毯</span>
+          <div>
+            <h1>手工地毯修复工作室 · 纹样与补线台账</h1>
+            <p>档案录入 · 纹样标记 · 开单占线 · 完工扣库 · 撤单放回</p>
+          </div>
+        </div>
+        <button
+          className="ghost-btn"
+          onClick={() => {
+            if (confirm("恢复内置演示数据？当前录入将被清除。")) {
+              dispatch({ type: "resetSeed" });
+            }
+          }}
+        >
+          恢复演示数据
+        </button>
+      </header>
 
       <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[28, 6, 14, 91][index] ?? 10}</strong>
+        {metrics.map((m) => (
+          <article key={m.label}>
+            <small>{m.label}</small>
+            <strong>{m.label === "完工率" ? `${m.value}%` : m.value || m.unit}</strong>
+            <span>{m.label === "可开单补线" ? "按色卡单位汇总" : m.unit}</span>
           </article>
         ))}
       </section>
 
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}分类</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
+      <nav className="tabs">
+        {TABS.map((t) => (
+          <button key={t.key} className={tab === t.key ? "on" : ""} onClick={() => setTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
+      {tab === "archive" && <ArchivePage />}
+      {tab === "jobs" && <JobsPage />}
+      {tab === "colors" && <ColorsPage />}
 
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>近期记录</p>
-            <h2>工作台摘要</h2>
-          </div>
-          <button>导出CSV</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <footer className="foot">
+        数据保存在本浏览器 localStorage；图片会自动压缩。库存口径：账面库存 − 占用中 = 可开单。
+      </footer>
     </main>
   );
 }
